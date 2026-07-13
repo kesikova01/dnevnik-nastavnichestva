@@ -7,7 +7,6 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 <script src="config.js"></script>
 <style>
   :root{
@@ -90,10 +89,9 @@
   .entry-detail{color:var(--muted); line-height:1.7; margin-top:10px; padding-top:10px; border-top:1px dashed var(--line);}
   .entry-detail div{margin-bottom:4px;}
   .entry-detail b{color:var(--text); font-weight:500;}
-  .pdf-btn{
-    margin-top:8px; background:var(--warm); color:#22160A; border:none;
-    border-radius:9px; padding:8px 12px; font-size:12.5px; font-weight:600; cursor:pointer;
-  }
+  .entry-section{margin-bottom:12px;}
+  .entry-section:last-child{margin-bottom:0;}
+  .entry-section-title{color:var(--breath); font-weight:600; margin-bottom:4px;}
   .empty{text-align:center; color:var(--muted); font-size:13px; padding:20px 0;}
 
   .export-box{margin-top:10px;}
@@ -283,7 +281,7 @@
   document.getElementById('fDate').value = today.toISOString().slice(0,10);
 
   function rowToEntry(row){
-    return Object.assign({ id: row.id, type: row.type, name: row.name, date: row.entry_date, createdAt: row.created_at }, row.data || {});
+    return { id: row.id, name: row.name, date: row.entry_date, createdAt: row.created_at, daily: row.daily, feelings: row.feelings, task: row.task };
   }
 
   async function loadEntries(){
@@ -294,12 +292,13 @@
     }catch(e){ console.error('load failed', e); entries = []; showToast('Не удалось загрузить данные — проверьте config.js', true); }
     return entries;
   }
-  async function insertEntry(rec){
-    const { id, type, name, date, createdAt, ...data } = rec;
-    const { error } = await supabase.from('diary_entries').insert({
-      id, type, name, entry_date: date, created_at: createdAt, data
-    });
-    if(error){ console.error('insert failed', error); showToast('Не удалось сохранить — проверьте config.js', true); return false; }
+
+  // Одна запись на человека в день: разделы daily/feelings/task сливаются в одну строку по id = дата+имя.
+  async function upsertSection(name, date, section, sectionData){
+    const id = `${date}::${name}`;
+    const payload = { id, name, entry_date: date, created_at: Date.now(), [section]: sectionData };
+    const { error } = await supabase.from('diary_entries').upsert(payload, { onConflict: 'id' });
+    if(error){ console.error('save failed', error); showToast('Не удалось сохранить — проверьте config.js', true); return false; }
     return true;
   }
   function loadLastName(){
@@ -320,30 +319,26 @@
       showToast('Укажите ФИО и дату', true);
       return;
     }
-    let rec = { id: Date.now()+'-'+Math.random().toString(36).slice(2,7), type: currentType, name, date, createdAt: Date.now() };
-
+    let sectionData;
     if(currentType==='daily'){
-      Object.assign(rec, {
+      sectionData = {
         sleepStart: val('d_sleepStart'), sleepEnd: val('d_sleepEnd'), sleepQuality: val('d_sleepQuality'),
         water: val('d_water'),
         activityType: val('d_activityType'), activityMin: val('d_activityMin'), steps: val('d_steps'),
         gratitude: val('d_gratitude'),
         triggerWhat: val('d_triggerWhat'), emotions: val('d_emotions')
-      });
+      };
     } else if(currentType==='feelings'){
-      Object.assign(rec, {
+      sectionData = {
         facts: val('fe_facts'), feelings: val('fe_feelings'), triggerWhat: val('fe_trigger'),
         reaction: val('fe_reaction'), conclusion: val('fe_conclusion')
-      });
+      };
     } else {
-      Object.assign(rec, {
-        with: val('ta_with'), what: val('ta_what'), feel: val('ta_feel'), done: chk('ta_done')
-      });
+      sectionData = { with: val('ta_with'), what: val('ta_what'), feel: val('ta_feel'), done: chk('ta_done') };
     }
 
-    const ok = await insertEntry(rec);
+    const ok = await upsertSection(name, date, currentType, sectionData);
     if(ok){
-      entries.push(rec);
       saveLastName(name);
       showToast('Запись сохранена ✓', false);
       clearForm(currentType);
@@ -381,67 +376,56 @@
     return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   }
 
-  function typeLabel(t){ return t==='daily' ? '🌙 День' : t==='feelings' ? '💥 Чувства' : '✏️ Задание'; }
+  function entryTypesLabel(e){
+    const parts = [];
+    if(e.daily) parts.push('🌙');
+    if(e.feelings) parts.push('💥');
+    if(e.task) parts.push('✏️');
+    return parts.join(' ') || '—';
+  }
 
-  function entryFields(e){
-    if(e.type==='daily'){
-      return [
-        ['Легла спать', e.sleepStart||'—'],
-        ['Встала', e.sleepEnd||'—'],
-        ['Качество сна (1–10)', e.sleepQuality||'—'],
-        ['Вода (стаканов)', e.water||'—'],
-        ['Вид активности', e.activityType||'—'],
-        ['Минут активности', e.activityMin||'—'],
-        ['Шаги за день', e.steps||'—'],
-        ['Благодарность', e.gratitude||'—'],
-        ['Триггеры', e.triggerWhat||'—'],
-        ['Эмоции/чувства', e.emotions||'—']
-      ];
+  function entrySections(e){
+    const sections = [];
+    if(e.daily){
+      sections.push(['🌙 Ежедневно', [
+        ['Легла спать', e.daily.sleepStart||'—'],
+        ['Встала', e.daily.sleepEnd||'—'],
+        ['Качество сна (1–10)', e.daily.sleepQuality||'—'],
+        ['Вода (стаканов)', e.daily.water||'—'],
+        ['Вид активности', e.daily.activityType||'—'],
+        ['Минут активности', e.daily.activityMin||'—'],
+        ['Шаги за день', e.daily.steps||'—'],
+        ['Благодарность', e.daily.gratitude||'—'],
+        ['Триггеры', e.daily.triggerWhat||'—'],
+        ['Эмоции/чувства', e.daily.emotions||'—']
+      ]]);
     }
-    if(e.type==='feelings'){
-      return [
-        ['Что произошло (факты)', e.facts||'—'],
-        ['Что почувствовала', e.feelings||'—'],
-        ['Что триггернуло', e.triggerWhat||'—'],
-        ['Как отреагировала', e.reaction||'—'],
-        ['Вывод / как хочу реагировать', e.conclusion||'—']
-      ];
+    if(e.feelings){
+      sections.push(['💥 Чувства', [
+        ['Что произошло (факты)', e.feelings.facts||'—'],
+        ['Что почувствовала', e.feelings.feelings||'—'],
+        ['Что триггернуло', e.feelings.triggerWhat||'—'],
+        ['Как отреагировала', e.feelings.reaction||'—'],
+        ['Вывод / как хочу реагировать', e.feelings.conclusion||'—']
+      ]]);
     }
-    return [
-      ['Задание / с кем', e.with||'—'],
-      ['Что сделала', e.what||'—'],
-      ['Что почувствовала', e.feel||'—'],
-      ['Выполнено', e.done?'да':'нет']
-    ];
+    if(e.task){
+      sections.push(['✏️ Задание', [
+        ['Задание / с кем', e.task.with||'—'],
+        ['Что сделала', e.task.what||'—'],
+        ['Что почувствовала', e.task.feel||'—'],
+        ['Выполнено', e.task.done?'да':'нет']
+      ]]);
+    }
+    return sections;
   }
 
   function entryDetail(e){
-    return entryFields(e).map(([label, value])=>
-      `<div><b>${escapeHtml(label)}:</b> ${escapeHtml(value)}</div>`
+    return entrySections(e).map(([title, fields])=>
+      `<div class="entry-section"><div class="entry-section-title">${escapeHtml(title)}</div>` +
+      fields.map(([label, value])=> `<div><b>${escapeHtml(label)}:</b> ${escapeHtml(value)}</div>`).join('') +
+      `</div>`
     ).join('');
-  }
-
-  function downloadPdf(e){
-    const { jsPDF } = window.jspdf;
-    const doc = new jsPDF();
-    const marginX = 14;
-    const maxWidth = 182;
-    let y = 18;
-    const addLine = (text, size, bold)=>{
-      doc.setFontSize(size);
-      doc.setFont(undefined, bold ? 'bold' : 'normal');
-      const wrapped = doc.splitTextToSize(text, maxWidth);
-      wrapped.forEach(line=>{
-        if(y > 285){ doc.addPage(); y = 18; }
-        doc.text(line, marginX, y);
-        y += size > 12 ? 8 : 7;
-      });
-    };
-    addLine(e.name, 15, true);
-    addLine(`${e.date} · ${typeLabel(e.type).replace(/^\S+\s/,'')}`, 11, false);
-    y += 3;
-    entryFields(e).forEach(([label, value])=> addLine(`${label}: ${value}`, 11, false));
-    doc.save(`${e.name}_${e.date}.pdf`.replace(/\s+/g,'_'));
   }
 
   function renderMentor(){
@@ -462,19 +446,12 @@
         <details class="entry">
           <summary class="entry-head">
             <span class="entry-name">${escapeHtml(e.name)}</span>
-            <span class="entry-meta">${e.date} · ${typeLabel(e.type)}</span>
+            <span class="entry-meta">${e.date} · ${entryTypesLabel(e)}</span>
           </summary>
           <div class="entry-detail">
             ${entryDetail(e)}
-            <button class="pdf-btn" data-id="${e.id}">⬇ Скачать PDF</button>
           </div>
         </details>`).join('');
-      list.querySelectorAll('.pdf-btn').forEach(btn=>{
-        btn.addEventListener('click', ()=>{
-          const entry = filtered.find(x=> x.id === btn.dataset.id);
-          if(entry) downloadPdf(entry);
-        });
-      });
     }
 
     document.getElementById('exportArea').value = buildExport(filtered);
@@ -484,26 +461,11 @@
     if(list.length===0) return 'Нет данных для экспорта.';
     const lines = [];
     list.slice().reverse().forEach(e=>{
-      lines.push(`--- ${e.date} · ${e.name} · ${typeLabel(e.type).replace(/^\S+\s/,'')} ---`);
-      if(e.type==='daily'){
-        lines.push(`Сон: ${e.sleepStart||'-'}–${e.sleepEnd||'-'}, качество ${e.sleepQuality||'-'}/10`);
-        lines.push(`Вода: ${e.water||0} стаканов`);
-        lines.push(`Движение: ${e.activityType||'-'}, ${e.activityMin||0} мин, ${e.steps||0} шагов`);
-        lines.push(`Благодарность: ${e.gratitude||'-'}`);
-        lines.push(`Триггеры: ${e.triggerWhat||'-'}`);
-        lines.push(`Эмоции/чувства: ${e.emotions||'-'}`);
-      } else if(e.type==='feelings'){
-        lines.push(`Факты: ${e.facts||'-'}`);
-        lines.push(`Чувства: ${e.feelings||'-'}`);
-        lines.push(`Триггер: ${e.triggerWhat||'-'}`);
-        lines.push(`Реакция: ${e.reaction||'-'}`);
-        lines.push(`Вывод: ${e.conclusion||'-'}`);
-      } else {
-        lines.push(`С кем: ${e.with||'-'}`);
-        lines.push(`Сделано: ${e.what||'-'}`);
-        lines.push(`Чувства: ${e.feel||'-'}`);
-        lines.push(`Выполнено: ${e.done?'да':'нет'}`);
-      }
+      lines.push(`--- ${e.date} · ${e.name} ---`);
+      entrySections(e).forEach(([title, fields])=>{
+        lines.push(title.replace(/^\S+\s/,''));
+        fields.forEach(([label, value])=> lines.push(`  ${label}: ${value}`));
+      });
       lines.push('');
     });
     return lines.join('\n');
