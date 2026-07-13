@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Дневник наставничества</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="config.js"></script>
+<style>
+  :root{
+    --bg:#0F211D;
+    --panel:#17322B;
+    --panel2:#1C3B33;
+    --line:#2A473E;
+    --breath:#7FB8AE;
+    --warm:#E3A76F;
+    --text:#F3EFE4;
+    --muted:#93AAA2;
+    --danger:#C9594A;
+    --ok:#8FBF8A;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    background:radial-gradient(120% 120% at 50% -10%, #1B3A32 0%, var(--bg) 55%);
+    color:var(--text);
+    font-family:'IBM Plex Sans', sans-serif;
+    padding:20px 14px 60px;
+  }
+  .app{max-width:520px; margin:0 auto;}
+  .eyebrow{font-family:'IBM Plex Mono',monospace; font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:var(--breath); text-align:center;}
+  h1{font-family:'Fraunces',serif; font-weight:600; font-size:23px; text-align:center; margin:4px 0 18px;}
+
+  .tabs{display:flex; gap:8px; margin-bottom:18px;}
+  .tab{
+    flex:1; text-align:center; padding:11px 8px; border-radius:12px;
+    background:var(--panel); border:1px solid var(--line); color:var(--muted);
+    font-size:13.5px; font-weight:600; cursor:pointer;
+  }
+  .tab.active{background:var(--warm); color:#22160A; border-color:var(--warm);}
+
+  .seg{display:flex; gap:6px; margin-bottom:20px;}
+  .seg-btn{
+    flex:1; padding:9px 4px; border-radius:10px; text-align:center;
+    background:var(--panel); border:1px solid var(--line); color:var(--muted);
+    font-size:12.5px; cursor:pointer;
+  }
+  .seg-btn.active{background:var(--breath); color:#0F211D; border-color:var(--breath);}
+
+  .card{background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:16px 16px 6px; margin-bottom:16px;}
+  .card h2{font-family:'Fraunces',serif; font-weight:600; font-size:15px; margin:0 0 12px;}
+
+  .field{margin-bottom:12px;}
+  .field label{display:block; font-size:12.5px; color:var(--muted); margin-bottom:5px;}
+  .row2{display:grid; grid-template-columns:1fr 1fr; gap:10px;}
+  input[type=text], input[type=number], input[type=time], input[type=date],
+  select, textarea{
+    width:100%;
+    background:var(--panel2); border:1px solid var(--line); color:var(--text);
+    border-radius:9px; padding:9px 10px; font-size:14px; font-family:inherit; outline:none;
+  }
+  textarea{resize:vertical; min-height:54px;}
+  .check{display:flex; align-items:center; gap:8px; font-size:13.5px; color:var(--text); padding:4px 0;}
+  .check input{accent-color:var(--breath); width:17px; height:17px;}
+
+  .submit-btn{
+    width:100%; background:var(--warm); color:#22160A; border:none; border-radius:13px;
+    padding:14px; font-size:15.5px; font-weight:600; cursor:pointer; margin:6px 0 4px;
+  }
+  .submit-btn:active{transform:scale(.98);}
+  .toast{
+    text-align:center; color:var(--ok); font-size:13px; height:18px; margin-bottom:6px;
+  }
+
+  .mentor-controls{display:flex; gap:8px; margin-bottom:14px;}
+  .icon-btn{
+    background:var(--panel); border:1px solid var(--line); color:var(--breath);
+    border-radius:10px; width:42px; flex-shrink:0; font-size:16px; cursor:pointer;
+  }
+
+  .entry{border-bottom:1px solid var(--line); padding:11px 2px; font-size:13px;}
+  .entry:last-child{border-bottom:none;}
+  .entry-head{display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;}
+  .entry-name{font-weight:600; font-size:13.5px;}
+  .entry-meta{color:var(--muted); font-size:11.5px; font-family:'IBM Plex Mono',monospace;}
+  .entry-body{color:var(--muted); line-height:1.6;}
+  .entry-body b{color:var(--text); font-weight:500;}
+  .del{background:none; border:none; color:var(--muted); font-size:14px; cursor:pointer; padding:2px 6px;}
+  .del:hover{color:var(--danger);}
+  .empty{text-align:center; color:var(--muted); font-size:13px; padding:20px 0;}
+
+  .export-box{margin-top:10px;}
+  textarea#exportArea{min-height:160px; font-family:'IBM Plex Mono',monospace; font-size:11.5px;}
+  .copy-btn{
+    margin-top:8px; width:100%; background:var(--breath); color:#0F211D; border:none;
+    border-radius:11px; padding:11px; font-size:14px; font-weight:600; cursor:pointer;
+  }
+  .foot-note{text-align:center; color:var(--muted); font-size:11.5px; line-height:1.6; margin-top:6px;}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="eyebrow">Программа наставничества</div>
+  <h1>Дневник наставничества</h1>
+
+  <div class="tabs">
+    <div class="tab active" data-tab="fill">Заполнить</div>
+    <div class="tab" data-tab="mentor">Наставнику</div>
+  </div>
+
+  <!-- FILL TAB -->
+  <div id="tab-fill">
+    <div class="seg">
+      <div class="seg-btn active" data-type="daily">Ежедневно</div>
+      <div class="seg-btn" data-type="feelings">Чувства</div>
+      <div class="seg-btn" data-type="task">Задание</div>
+    </div>
+
+    <div class="card">
+      <div class="field">
+        <label>ФИО</label>
+        <input type="text" id="fName" list="namesList" placeholder="Имя Фамилия">
+        <datalist id="namesList"></datalist>
+      </div>
+      <div class="field">
+        <label>Дата</label>
+        <input type="date" id="fDate">
+      </div>
+    </div>
+
+    <!-- DAILY FORM -->
+    <div id="form-daily">
+      <div class="card">
+        <h2>🌙 Сон</h2>
+        <div class="row2">
+          <div class="field"><label>Легла спать</label><input type="time" id="d_sleepStart"></div>
+          <div class="field"><label>Встала</label><input type="time" id="d_sleepEnd"></div>
+        </div>
+        <div class="field"><label>Качество сна (1–10)</label><input type="number" min="1" max="10" id="d_sleepQuality"></div>
+      </div>
+
+      <div class="card">
+        <h2>💧 Вода</h2>
+        <div class="field"><label>Сколько стаканов за день</label><input type="number" min="0" id="d_water"></div>
+      </div>
+
+      <div class="card">
+        <h2>🏃 Движение</h2>
+        <div class="field"><label>Вид активности</label><input type="text" id="d_activityType" placeholder="ходьба / йога / упражнения"></div>
+        <div class="row2">
+          <div class="field"><label>Минут</label><input type="number" min="0" id="d_activityMin"></div>
+          <div class="field"><label>Шаги за день</label><input type="number" min="0" id="d_steps"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>🙏 Благодарность</h2>
+        <div class="field"><label>Кого и за что поблагодарила</label><textarea id="d_gratitude" placeholder="Например: маму — за поддержку"></textarea></div>
+      </div>
+
+      <div class="card">
+        <h2>💥 Триггеры и эмоции</h2>
+        <div class="field"><label>Какие триггеры были</label><textarea id="d_triggerWhat"></textarea></div>
+        <div class="field"><label>Какие эмоции/чувства испытала сегодня</label><textarea id="d_emotions"></textarea></div>
+      </div>
+    </div>
+
+    <!-- FEELINGS FORM -->
+    <div id="form-feelings" style="display:none;">
+      <div class="card">
+        <h2>💥 Лист чувств и триггеров</h2>
+        <div class="field"><label>Что произошло (факты)</label><textarea id="fe_facts"></textarea></div>
+        <div class="field"><label>Что почувствовала</label><textarea id="fe_feelings"></textarea></div>
+        <div class="field"><label>Что триггернуло</label><input type="text" id="fe_trigger"></div>
+        <div class="field"><label>Как отреагировала</label><textarea id="fe_reaction"></textarea></div>
+        <div class="field"><label>Вывод / как хочу реагировать</label><textarea id="fe_conclusion"></textarea></div>
+      </div>
+    </div>
+
+    <!-- TASK FORM -->
+    <div id="form-task" style="display:none;">
+      <div class="card">
+        <h2>✏️ Задание — работа с отношениями</h2>
+        <div class="field"><label>Задание / с кем</label><input type="text" id="ta_with"></div>
+        <div class="field"><label>Что сделала</label><textarea id="ta_what"></textarea></div>
+        <div class="field"><label>Что почувствовала</label><textarea id="ta_feel"></textarea></div>
+        <label class="check"><input type="checkbox" id="ta_done"> Выполнено</label>
+      </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+    <button class="submit-btn" id="submitBtn">Сохранить запись</button>
+    <p class="foot-note">Данные общие для всех, кто открывает эту ссылку — наставник видит все записи во вкладке «Наставнику».</p>
+  </div>
+
+  <!-- MENTOR TAB -->
+  <div id="tab-mentor" style="display:none;">
+    <div class="mentor-controls">
+      <select id="filterName" style="flex:1;"></select>
+      <button class="icon-btn" id="refreshBtn" title="Обновить">↻</button>
+      <button class="icon-btn" id="delAllBtn" title="Очистить всё">🗑</button>
+    </div>
+    <div class="card" id="entriesCard">
+      <h2>Записи</h2>
+      <div id="entriesList"></div>
+    </div>
+    <div class="card export-box">
+      <h2>Экспорт для анализа</h2>
+      <p style="font-size:12.5px; color:var(--muted); margin:0 0 10px;">Скопируйте текст ниже и вставьте в чат с Claude, чтобы вместе разобрать динамику.</p>
+      <textarea id="exportArea" readonly></textarea>
+      <button class="copy-btn" id="copyBtn">Скопировать</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  const LOCAL_NAME_KEY = 'diary-last-name';
+  const supabase = window.supabase.createClient(window.SUPABASE_URL, window.SUPABASE_ANON_KEY);
+  let entries = [];
+  let currentType = 'daily';
+
+  // tabs
+  document.querySelectorAll('.tab').forEach(t=>{
+    t.addEventListener('click', ()=>{
+      document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
+      t.classList.add('active');
+      document.getElementById('tab-fill').style.display = t.dataset.tab==='fill' ? 'block':'none';
+      document.getElementById('tab-mentor').style.display = t.dataset.tab==='mentor' ? 'block':'none';
+      if(t.dataset.tab==='mentor'){ loadEntries().then(renderMentor); }
+    });
+  });
+
+  // type segments
+  document.querySelectorAll('.seg-btn').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      document.querySelectorAll('.seg-btn').forEach(x=>x.classList.remove('active'));
+      b.classList.add('active');
+      currentType = b.dataset.type;
+      document.getElementById('form-daily').style.display = currentType==='daily' ? 'block':'none';
+      document.getElementById('form-feelings').style.display = currentType==='feelings' ? 'block':'none';
+      document.getElementById('form-task').style.display = currentType==='task' ? 'block':'none';
+    });
+  });
+
+  // default date = today
+  const today = new Date();
+  document.getElementById('fDate').value = today.toISOString().slice(0,10);
+
+  function rowToEntry(row){
+    return Object.assign({ id: row.id, type: row.type, name: row.name, date: row.entry_date, createdAt: row.created_at }, row.data || {});
+  }
+
+  async function loadEntries(){
+    try{
+      const { data, error } = await supabase.from('diary_entries').select('*');
+      if(error) throw error;
+      entries = (data || []).map(rowToEntry);
+    }catch(e){ console.error('load failed', e); entries = []; showToast('Не удалось загрузить данные — проверьте config.js', true); }
+    return entries;
+  }
+  async function insertEntry(rec){
+    const { id, type, name, date, createdAt, ...data } = rec;
+    const { error } = await supabase.from('diary_entries').insert({
+      id, type, name, entry_date: date, created_at: createdAt, data
+    });
+    if(error){ console.error('insert failed', error); showToast('Не удалось сохранить — проверьте config.js', true); return false; }
+    return true;
+  }
+  async function deleteEntry(id){
+    const { error } = await supabase.from('diary_entries').delete().eq('id', id);
+    if(error) console.error('delete failed', error);
+  }
+  async function deleteByName(name){
+    let q = supabase.from('diary_entries').delete();
+    q = name==='__all__' ? q.neq('id', '') : q.eq('name', name);
+    const { error } = await q;
+    if(error) console.error('delete failed', error);
+  }
+
+  function loadLastName(){
+    const v = localStorage.getItem(LOCAL_NAME_KEY);
+    if(v) document.getElementById('fName').value = v;
+  }
+  function saveLastName(name){
+    localStorage.setItem(LOCAL_NAME_KEY, name);
+  }
+
+  function val(id){ return document.getElementById(id).value; }
+  function chk(id){ return document.getElementById(id).checked; }
+
+  document.getElementById('submitBtn').addEventListener('click', async ()=>{
+    const name = val('fName').trim();
+    const date = val('fDate');
+    if(!name || !date){
+      showToast('Укажите ФИО и дату', true);
+      return;
+    }
+    let rec = { id: Date.now()+'-'+Math.random().toString(36).slice(2,7), type: currentType, name, date, createdAt: Date.now() };
+
+    if(currentType==='daily'){
+      Object.assign(rec, {
+        sleepStart: val('d_sleepStart'), sleepEnd: val('d_sleepEnd'), sleepQuality: val('d_sleepQuality'),
+        water: val('d_water'),
+        activityType: val('d_activityType'), activityMin: val('d_activityMin'), steps: val('d_steps'),
+        gratitude: val('d_gratitude'),
+        triggerWhat: val('d_triggerWhat'), emotions: val('d_emotions')
+      });
+    } else if(currentType==='feelings'){
+      Object.assign(rec, {
+        facts: val('fe_facts'), feelings: val('fe_feelings'), triggerWhat: val('fe_trigger'),
+        reaction: val('fe_reaction'), conclusion: val('fe_conclusion')
+      });
+    } else {
+      Object.assign(rec, {
+        with: val('ta_with'), what: val('ta_what'), feel: val('ta_feel'), done: chk('ta_done')
+      });
+    }
+
+    const ok = await insertEntry(rec);
+    if(ok){
+      entries.push(rec);
+      saveLastName(name);
+      showToast('Запись сохранена ✓', false);
+      clearForm(currentType);
+    }
+  });
+
+  function clearForm(type){
+    const ids = {
+      daily: ['d_sleepStart','d_sleepEnd','d_sleepQuality','d_water','d_activityType','d_activityMin','d_steps','d_gratitude','d_triggerWhat','d_emotions'],
+      feelings: ['fe_facts','fe_feelings','fe_trigger','fe_reaction','fe_conclusion'],
+      task: ['ta_with','ta_what','ta_feel']
+    };
+    (ids[type]||[]).forEach(id=> document.getElementById(id).value = '');
+    ['ta_done'].forEach(id=>{
+      const el = document.getElementById(id);
+      if(el && type==='task') el.checked = false;
+    });
+  }
+
+  let toastTimer;
+  function showToast(msg, isError){
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.style.color = isError ? 'var(--danger)' : 'var(--ok)';
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(()=>{ t.textContent=''; }, 2500);
+  }
+
+  // MENTOR VIEW
+  const filterName = document.getElementById('filterName');
+  document.getElementById('refreshBtn').addEventListener('click', ()=> loadEntries().then(renderMentor));
+  filterName.addEventListener('change', renderMentor);
+  document.getElementById('delAllBtn').addEventListener('click', async ()=>{
+    const name = filterName.value;
+    const label = name==='__all__' ? 'все записи' : ('все записи «'+name+'»');
+    if(!confirm('Удалить '+label+'? Это необратимо.')) return;
+    await deleteByName(name);
+    await loadEntries();
+    renderMentor();
+  });
+
+  function typeLabel(t){ return t==='daily' ? '🌙 День' : t==='feelings' ? '💥 Чувства' : '✏️ Задание'; }
+
+  function entrySummary(e){
+    if(e.type==='daily'){
+      return `Сон <b>${e.sleepStart||'—'}→${e.sleepEnd||'—'}</b> (кач-во ${e.sleepQuality||'—'}) · Вода <b>${e.water||'—'}</b> ст. · Движение <b>${e.activityMin||'—'}</b> мин` +
+        (e.triggerWhat ? ' · ⚠️ был триггер' : '');
+    }
+    if(e.type==='feelings'){
+      return `Триггер: <b>${e.triggerWhat||'—'}</b><br>${(e.facts||'').slice(0,80)}`;
+    }
+    return `С кем: <b>${e.with||'—'}</b> · Выполнено: <b>${e.done?'да':'нет'}</b>`;
+  }
+
+  function renderMentor(){
+    const names = Array.from(new Set(entries.map(e=>e.name))).sort();
+    const prevVal = filterName.value;
+    filterName.innerHTML = '<option value="__all__">Все подопечные</option>' + names.map(n=>`<option value="${n}">${n}</option>`).join('');
+    if(names.includes(prevVal)) filterName.value = prevVal;
+
+    const filtered = entries
+      .filter(e=> filterName.value==='__all__' || e.name===filterName.value)
+      .sort((a,b)=> (b.date||'').localeCompare(a.date||'') || b.createdAt - a.createdAt);
+
+    const list = document.getElementById('entriesList');
+    if(filtered.length===0){
+      list.innerHTML = '<div class="empty">Записей пока нет</div>';
+    } else {
+      list.innerHTML = filtered.map(e=>`
+        <div class="entry">
+          <div class="entry-head">
+            <span class="entry-name">${e.name}</span>
+            <span class="entry-meta">${e.date} · ${typeLabel(e.type)}</span>
+          </div>
+          <div class="entry-body">${entrySummary(e)}</div>
+          <button class="del" data-id="${e.id}">✕ удалить</button>
+        </div>`).join('');
+      list.querySelectorAll('.del').forEach(btn=>{
+        btn.addEventListener('click', async ()=>{
+          await deleteEntry(btn.dataset.id);
+          entries = entries.filter(e=> e.id !== btn.dataset.id);
+          renderMentor();
+        });
+      });
+    }
+
+    document.getElementById('exportArea').value = buildExport(filtered);
+  }
+
+  function buildExport(list){
+    if(list.length===0) return 'Нет данных для экспорта.';
+    const lines = [];
+    list.slice().reverse().forEach(e=>{
+      lines.push(`--- ${e.date} · ${e.name} · ${typeLabel(e.type).replace(/^\S+\s/,'')} ---`);
+      if(e.type==='daily'){
+        lines.push(`Сон: ${e.sleepStart||'-'}–${e.sleepEnd||'-'}, качество ${e.sleepQuality||'-'}/10`);
+        lines.push(`Вода: ${e.water||0} стаканов`);
+        lines.push(`Движение: ${e.activityType||'-'}, ${e.activityMin||0} мин, ${e.steps||0} шагов`);
+        lines.push(`Благодарность: ${e.gratitude||'-'}`);
+        lines.push(`Триггеры: ${e.triggerWhat||'-'}`);
+        lines.push(`Эмоции/чувства: ${e.emotions||'-'}`);
+      } else if(e.type==='feelings'){
+        lines.push(`Факты: ${e.facts||'-'}`);
+        lines.push(`Чувства: ${e.feelings||'-'}`);
+        lines.push(`Триггер: ${e.triggerWhat||'-'}`);
+        lines.push(`Реакция: ${e.reaction||'-'}`);
+        lines.push(`Вывод: ${e.conclusion||'-'}`);
+      } else {
+        lines.push(`С кем: ${e.with||'-'}`);
+        lines.push(`Сделано: ${e.what||'-'}`);
+        lines.push(`Чувства: ${e.feel||'-'}`);
+        lines.push(`Выполнено: ${e.done?'да':'нет'}`);
+      }
+      lines.push('');
+    });
+    return lines.join('\n');
+  }
+
+  document.getElementById('copyBtn').addEventListener('click', async ()=>{
+    const area = document.getElementById('exportArea');
+    area.select();
+    try{
+      await navigator.clipboard.writeText(area.value);
+      showCopyState(true);
+    }catch(e){
+      try{ document.execCommand('copy'); showCopyState(true); }
+      catch(e2){ showCopyState(false); }
+    }
+  });
+  function showCopyState(ok){
+    const btn = document.getElementById('copyBtn');
+    const original = 'Скопировать';
+    btn.textContent = ok ? 'Скопировано ✓' : 'Не удалось — выделите текст вручную';
+    setTimeout(()=>{ btn.textContent = original; }, 2000);
+  }
+
+  // init
+  loadLastName();
+  loadEntries();
+})();
+</script>
+</body>
+</html>
