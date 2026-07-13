@@ -7,6 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 <script src="config.js"></script>
 <style>
   :root{
@@ -82,13 +83,17 @@
 
   .entry{border-bottom:1px solid var(--line); padding:11px 2px; font-size:13px;}
   .entry:last-child{border-bottom:none;}
-  .entry-head{display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;}
+  .entry-head{display:flex; justify-content:space-between; align-items:center; cursor:pointer; list-style:revert;}
+  .entry-head::marker{color:var(--breath);}
   .entry-name{font-weight:600; font-size:13.5px;}
   .entry-meta{color:var(--muted); font-size:11.5px; font-family:'IBM Plex Mono',monospace;}
-  .entry-body{color:var(--muted); line-height:1.6;}
-  .entry-body b{color:var(--text); font-weight:500;}
-  .del{background:none; border:none; color:var(--muted); font-size:14px; cursor:pointer; padding:2px 6px;}
-  .del:hover{color:var(--danger);}
+  .entry-detail{color:var(--muted); line-height:1.7; margin-top:10px; padding-top:10px; border-top:1px dashed var(--line);}
+  .entry-detail div{margin-bottom:4px;}
+  .entry-detail b{color:var(--text); font-weight:500;}
+  .pdf-btn{
+    margin-top:8px; background:var(--warm); color:#22160A; border:none;
+    border-radius:9px; padding:8px 12px; font-size:12.5px; font-weight:600; cursor:pointer;
+  }
   .empty{text-align:center; color:var(--muted); font-size:13px; padding:20px 0;}
 
   .export-box{margin-top:10px;}
@@ -200,7 +205,6 @@
     <div class="mentor-controls">
       <select id="filterName" style="flex:1;"></select>
       <button class="icon-btn" id="refreshBtn" title="Обновить">↻</button>
-      <button class="icon-btn" id="delAllBtn" title="Очистить всё">🗑</button>
     </div>
     <div class="card" id="entriesCard">
       <h2>Записи</h2>
@@ -269,17 +273,6 @@
     if(error){ console.error('insert failed', error); showToast('Не удалось сохранить — проверьте config.js', true); return false; }
     return true;
   }
-  async function deleteEntry(id){
-    const { error } = await supabase.from('diary_entries').delete().eq('id', id);
-    if(error) console.error('delete failed', error);
-  }
-  async function deleteByName(name){
-    let q = supabase.from('diary_entries').delete();
-    q = name==='__all__' ? q.neq('id', '') : q.eq('name', name);
-    const { error } = await q;
-    if(error) console.error('delete failed', error);
-  }
-
   function loadLastName(){
     const v = localStorage.getItem(LOCAL_NAME_KEY);
     if(v) document.getElementById('fName').value = v;
@@ -354,32 +347,78 @@
   const filterName = document.getElementById('filterName');
   document.getElementById('refreshBtn').addEventListener('click', ()=> loadEntries().then(renderMentor));
   filterName.addEventListener('change', renderMentor);
-  document.getElementById('delAllBtn').addEventListener('click', async ()=>{
-    const name = filterName.value;
-    const label = name==='__all__' ? 'все записи' : ('все записи «'+name+'»');
-    if(!confirm('Удалить '+label+'? Это необратимо.')) return;
-    await deleteByName(name);
-    await loadEntries();
-    renderMentor();
-  });
+
+  function escapeHtml(s){
+    return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
 
   function typeLabel(t){ return t==='daily' ? '🌙 День' : t==='feelings' ? '💥 Чувства' : '✏️ Задание'; }
 
-  function entrySummary(e){
+  function entryFields(e){
     if(e.type==='daily'){
-      return `Сон <b>${e.sleepStart||'—'}→${e.sleepEnd||'—'}</b> (кач-во ${e.sleepQuality||'—'}) · Вода <b>${e.water||'—'}</b> ст. · Движение <b>${e.activityMin||'—'}</b> мин` +
-        (e.triggerWhat ? ' · ⚠️ был триггер' : '');
+      return [
+        ['Легла спать', e.sleepStart||'—'],
+        ['Встала', e.sleepEnd||'—'],
+        ['Качество сна (1–10)', e.sleepQuality||'—'],
+        ['Вода (стаканов)', e.water||'—'],
+        ['Вид активности', e.activityType||'—'],
+        ['Минут активности', e.activityMin||'—'],
+        ['Шаги за день', e.steps||'—'],
+        ['Благодарность', e.gratitude||'—'],
+        ['Триггеры', e.triggerWhat||'—'],
+        ['Эмоции/чувства', e.emotions||'—']
+      ];
     }
     if(e.type==='feelings'){
-      return `Триггер: <b>${e.triggerWhat||'—'}</b><br>${(e.facts||'').slice(0,80)}`;
+      return [
+        ['Что произошло (факты)', e.facts||'—'],
+        ['Что почувствовала', e.feelings||'—'],
+        ['Что триггернуло', e.triggerWhat||'—'],
+        ['Как отреагировала', e.reaction||'—'],
+        ['Вывод / как хочу реагировать', e.conclusion||'—']
+      ];
     }
-    return `С кем: <b>${e.with||'—'}</b> · Выполнено: <b>${e.done?'да':'нет'}</b>`;
+    return [
+      ['Задание / с кем', e.with||'—'],
+      ['Что сделала', e.what||'—'],
+      ['Что почувствовала', e.feel||'—'],
+      ['Выполнено', e.done?'да':'нет']
+    ];
+  }
+
+  function entryDetail(e){
+    return entryFields(e).map(([label, value])=>
+      `<div><b>${escapeHtml(label)}:</b> ${escapeHtml(value)}</div>`
+    ).join('');
+  }
+
+  function downloadPdf(e){
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF();
+    const marginX = 14;
+    const maxWidth = 182;
+    let y = 18;
+    const addLine = (text, size, bold)=>{
+      doc.setFontSize(size);
+      doc.setFont(undefined, bold ? 'bold' : 'normal');
+      const wrapped = doc.splitTextToSize(text, maxWidth);
+      wrapped.forEach(line=>{
+        if(y > 285){ doc.addPage(); y = 18; }
+        doc.text(line, marginX, y);
+        y += size > 12 ? 8 : 7;
+      });
+    };
+    addLine(e.name, 15, true);
+    addLine(`${e.date} · ${typeLabel(e.type).replace(/^\S+\s/,'')}`, 11, false);
+    y += 3;
+    entryFields(e).forEach(([label, value])=> addLine(`${label}: ${value}`, 11, false));
+    doc.save(`${e.name}_${e.date}.pdf`.replace(/\s+/g,'_'));
   }
 
   function renderMentor(){
     const names = Array.from(new Set(entries.map(e=>e.name))).sort();
     const prevVal = filterName.value;
-    filterName.innerHTML = '<option value="__all__">Все подопечные</option>' + names.map(n=>`<option value="${n}">${n}</option>`).join('');
+    filterName.innerHTML = '<option value="__all__">Все подопечные</option>' + names.map(n=>`<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join('');
     if(names.includes(prevVal)) filterName.value = prevVal;
 
     const filtered = entries
@@ -391,19 +430,20 @@
       list.innerHTML = '<div class="empty">Записей пока нет</div>';
     } else {
       list.innerHTML = filtered.map(e=>`
-        <div class="entry">
-          <div class="entry-head">
-            <span class="entry-name">${e.name}</span>
+        <details class="entry">
+          <summary class="entry-head">
+            <span class="entry-name">${escapeHtml(e.name)}</span>
             <span class="entry-meta">${e.date} · ${typeLabel(e.type)}</span>
+          </summary>
+          <div class="entry-detail">
+            ${entryDetail(e)}
+            <button class="pdf-btn" data-id="${e.id}">⬇ Скачать PDF</button>
           </div>
-          <div class="entry-body">${entrySummary(e)}</div>
-          <button class="del" data-id="${e.id}">✕ удалить</button>
-        </div>`).join('');
-      list.querySelectorAll('.del').forEach(btn=>{
-        btn.addEventListener('click', async ()=>{
-          await deleteEntry(btn.dataset.id);
-          entries = entries.filter(e=> e.id !== btn.dataset.id);
-          renderMentor();
+        </details>`).join('');
+      list.querySelectorAll('.pdf-btn').forEach(btn=>{
+        btn.addEventListener('click', ()=>{
+          const entry = filtered.find(x=> x.id === btn.dataset.id);
+          if(entry) downloadPdf(entry);
         });
       });
     }
